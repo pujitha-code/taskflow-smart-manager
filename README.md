@@ -23,7 +23,7 @@ A full-stack task management web app built with **Flask + PostgreSQL + WebSocket
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/smart-task-manager.git
+git clone https://github.com/pujitha-code/taskflow-smart-manager.git
 cd smart-task-manager
 ```
 
