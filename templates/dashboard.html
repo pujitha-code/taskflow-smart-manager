@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TaskFlow — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<!-- AI-ASSISTED: Socket.IO client library for WebSocket real-time updates -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f; --card: #13131a; --border: #2a2a3a;
+    --accent: #7c6ff7; --accent2: #f97316; --text: #e8e8f0;
+    --muted: #6b6b80; --success: #22c55e; --warning: #eab308; --error: #ef4444;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; min-height:100vh; }
+
+  /* NAVBAR */
+  nav {
+    background: var(--card); border-bottom: 1px solid var(--border);
+    padding: 0 32px; height: 64px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-family:'Syne',sans-serif; font-size:22px; font-weight:800; }
+  .logo span { color: var(--accent); }
+  .nav-right { display:flex; align-items:center; gap:16px; }
+  .username { color:var(--muted); font-size:14px; }
+  .btn-logout {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--muted); padding: 8px 16px; border-radius:8px;
+    cursor:pointer; font-size:14px; transition:all 0.2s;
+  }
+  .btn-logout:hover { border-color:var(--error); color:var(--error); }
+
+  /* LIVE NOTIFICATION TOAST */
+  #toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--card); border: 1px solid var(--accent);
+    border-radius: 12px; padding: 14px 20px;
+    font-size: 14px; z-index: 999;
+    transform: translateY(100px); opacity: 0;
+    transition: all 0.3s ease;
+    max-width: 300px;
+  }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  #toast .t-label { color: var(--accent); font-size: 11px; font-weight:600; letter-spacing:1px; margin-bottom:4px; }
+
+  /* LAYOUT */
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+
+  /* ANALYTICS CARDS */
+  .analytics-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr));
+    gap: 16px; margin-bottom: 32px;
+  }
+  .stat-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px;
+    transition: border-color 0.2s;
+  }
+  .stat-card:hover { border-color: var(--accent); }
+  .stat-label { font-size: 12px; color: var(--muted); letter-spacing: 0.8px; margin-bottom: 12px; font-weight:500; }
+  .stat-value { font-family:'Syne',sans-serif; font-size: 36px; font-weight: 800; }
+  .stat-value.purple { color: var(--accent); }
+  .stat-value.green { color: var(--success); }
+  .stat-value.orange { color: var(--accent2); }
+  .stat-value.yellow { color: var(--warning); }
+
+  /* PROGRESS BAR */
+  .progress-wrap { margin-bottom: 32px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
+  .progress-header { display:flex; justify-content:space-between; margin-bottom: 12px; font-size:14px; }
+  .progress-bar-bg { background: var(--bg); border-radius: 99px; height: 8px; overflow:hidden; }
+  .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius:99px; transition: width 0.6s ease; }
+
+  /* TASK SECTION */
+  .section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+  .section-title { font-family:'Syne',sans-serif; font-size:20px; font-weight:700; }
+  .btn-add {
+    background: var(--accent); color: white; border: none;
+    padding: 10px 20px; border-radius: 10px;
+    font-family:'Syne',sans-serif; font-size:14px; font-weight:600;
+    cursor: pointer; transition: opacity 0.2s;
+  }
+  .btn-add:hover { opacity: 0.85; }
+
+  /* FILTERS */
+  .filters { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
+  .filter-btn {
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--muted); padding: 7px 16px; border-radius: 99px;
+    cursor: pointer; font-size:13px; transition: all 0.2s;
+  }
+  .filter-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(124,111,247,0.1); }
+
+  /* TASK CARDS */
+  .task-list { display: flex; flex-direction: column; gap: 12px; }
+  .task-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px 24px;
+    display: flex; align-items: center; gap: 16px;
+    transition: border-color 0.2s, transform 0.1s;
+    animation: slideIn 0.3s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+  .task-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .task-card.completed { opacity: 0.6; }
+  .task-card.completed .task-title { text-decoration: line-through; }
+  .task-info { flex: 1; }
+  .task-title { font-weight: 500; font-size: 15px; margin-bottom: 6px; }
+  .task-desc { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+  .task-meta { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .badge {
+    font-size: 11px; padding: 3px 10px; border-radius: 99px;
+    font-weight: 600; letter-spacing: 0.5px;
+  }
+  .badge.high { background: rgba(239,68,68,0.15); color: #fca5a5; }
+  .badge.medium { background: rgba(234,179,8,0.15); color: #fde047; }
+  .badge.low { background: rgba(34,197,94,0.15); color: #86efac; }
+  .badge.pending { background: rgba(107,107,128,0.2); color: var(--muted); }
+  .badge.in_progress { background: rgba(124,111,247,0.15); color: #a5b4fc; }
+  .badge.completed { background: rgba(34,197,94,0.15); color: #86efac; }
+  .task-date { font-size: 12px; color: var(--muted); }
+  .task-actions { display:flex; gap:8px; }
+  .btn-icon {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--muted); width: 34px; height: 34px;
+    border-radius: 8px; cursor: pointer; font-size: 15px;
+    transition: all 0.2s; display:flex; align-items:center; justify-content:center;
+  }
+  .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-icon.delete:hover { border-color: var(--error); color: var(--error); }
+  .empty-state { text-align:center; padding: 60px 20px; color: var(--muted); }
+  .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200; opacity:0; pointer-events:none; transition: opacity 0.2s;
+  }
+  .modal-overlay.open { opacity:1; pointer-events:all; }
+  .modal {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 20px; padding: 36px; width: 100%; max-width: 480px;
+    transform: scale(0.95); transition: transform 0.2s;
+  }
+  .modal-overlay.open .modal { transform: scale(1); }
+  .modal-title { font-family:'Syne',sans-serif; font-size:20px; font-weight:700; margin-bottom:24px; }
+  .form-group { margin-bottom: 18px; }
+  label { display:block; font-size:12px; color:var(--muted); margin-bottom:7px; font-weight:500; letter-spacing:0.5px; }
+  input, textarea, select {
+    width:100%; background:var(--bg); border:1px solid var(--border);
+    border-radius:10px; padding:12px 14px; color:var(--text);
+    font-family:'DM Sans',sans-serif; font-size:14px;
+    transition:border-color 0.2s; outline:none; resize:vertical;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  select option { background: var(--card); }
+  .modal-footer { display:flex; gap:12px; margin-top:24px; }
+  .btn-cancel {
+    flex:1; padding:12px; background:transparent; border:1px solid var(--border);
+    color:var(--muted); border-radius:10px; cursor:pointer; font-size:14px;
+    transition:all 0.2s;
+  }
+  .btn-cancel:hover { border-color: var(--error); color: var(--error); }
+  .btn-submit {
+    flex:2; padding:12px; background:var(--accent); color:white;
+    border:none; border-radius:10px; font-family:'Syne',sans-serif;
+    font-size:15px; font-weight:600; cursor:pointer; transition:opacity 0.2s;
+  }
+  .btn-submit:hover { opacity:0.85; }
+</style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav>
+  <div class="logo">Task<span>Flow</span></div>
+  <div class="nav-right">
+    <span class="username">👤 {{ username }}</span>
+    <button class="btn-logout" onclick="logout()">Logout</button>
+  </div>
+</nav>
+
+<!-- REAL-TIME TOAST NOTIFICATION -->
+<!-- AI-ASSISTED: This toast pops up automatically when any task changes via WebSocket -->
+<div id="toast">
+  <div class="t-label">⚡ LIVE UPDATE</div>
+  <div id="toast-msg">Task updated!</div>
+</div>
+
+<div class="container">
+
+  <!-- ANALYTICS SECTION -->
+  <div class="analytics-grid" id="analytics">
+    <div class="stat-card">
+      <div class="stat-label">TOTAL TASKS</div>
+      <div class="stat-value purple" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">COMPLETED</div>
+      <div class="stat-value green" id="stat-completed">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">PENDING</div>
+      <div class="stat-value orange" id="stat-pending">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">IN PROGRESS</div>
+      <div class="stat-value yellow" id="stat-inprogress">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">HIGH PRIORITY</div>
+      <div class="stat-value" style="color:var(--error)" id="stat-high">—</div>
+    </div>
+  </div>
+
+  <!-- PROGRESS BAR -->
+  <div class="progress-wrap">
+    <div class="progress-header">
+      <span style="font-weight:500">Completion Progress</span>
+      <span id="pct-label" style="color:var(--accent);font-family:'Syne',sans-serif;font-weight:700">0%</span>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+  </div>
+
+  <!-- TASK LIST SECTION -->
+  <div class="section-header">
+    <div class="section-title">My Tasks</div>
+    <button class="btn-add" onclick="openModal()">+ Add Task</button>
+  </div>
+
+  <!-- FILTERS -->
+  <div class="filters">
+    <button class="filter-btn active" onclick="filterTasks('all', this)">All</button>
+    <button class="filter-btn" onclick="filterTasks('pending', this)">Pending</button>
+    <button class="filter-btn" onclick="filterTasks('in_progress', this)">In Progress</button>
+    <button class="filter-btn" onclick="filterTasks('completed', this)">Completed</button>
+    <button class="filter-btn" onclick="filterTasks('high', this)">🔴 High Priority</button>
+  </div>
+
+  <div class="task-list" id="task-list">
+    <div class="empty-state"><div class="icon">📋</div><p>No tasks yet. Add your first task!</p></div>
+  </div>
+</div>
+
+<!-- ADD/EDIT TASK MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-title">Add New Task</div>
+    <div class="form-group">
+      <label>TASK TITLE</label>
+      <input type="text" id="task-title" placeholder="What needs to be done?"/>
+    </div>
+    <div class="form-group">
+      <label>DESCRIPTION</label>
+      <textarea id="task-desc" rows="3" placeholder="Add details..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>PRIORITY</label>
+      <select id="task-priority">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>STATUS</label>
+      <select id="task-status">
+        <option value="pending" selected>Pending</option>
+        <option value="in_progress">In Progress</option>
+        <option value="completed">Completed</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-submit" id="modal-submit" onclick="submitTask()">Add Task</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ──────────────────────────────────────
+let allTasks = [];
+let editingId = null;
+let currentFilter = 'all';
+
+// ── WEBSOCKET SETUP ────────────────────────────
+// AI-ASSISTED: Connect to WebSocket server for real-time updates
+const socket = io();
+
+socket.on('connect', () => console.log('WebSocket connected ✓'));
+
+// When any task is added anywhere, refresh our list and show notification
+socket.on('task_added', (data) => {
+  showToast(data.message);
+  loadTasks(); loadAnalytics();
+});
+socket.on('task_updated', (data) => {
+  showToast(data.message);
+  loadTasks(); loadAnalytics();
+});
+socket.on('task_deleted', (data) => {
+  showToast('Task deleted');
+  loadTasks(); loadAnalytics();
+});
+
+// ── TOAST NOTIFICATION ─────────────────────────
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// ── LOAD ANALYTICS ─────────────────────────────
+async function loadAnalytics() {
+  const res = await fetch('/api/analytics');
+  if (!res.ok) return;
+  const d = await res.json();
+  document.getElementById('stat-total').textContent = d.total_tasks;
+  document.getElementById('stat-completed').textContent = d.completed;
+  document.getElementById('stat-pending').textContent = d.pending;
+  document.getElementById('stat-inprogress').textContent = d.in_progress;
+  document.getElementById('stat-high').textContent = d.high_priority;
+  document.getElementById('progress-fill').style.width = d.completion_percentage + '%';
+  document.getElementById('pct-label').textContent = d.completion_percentage + '%';
+}
+
+// ── LOAD TASKS ─────────────────────────────────
+async function loadTasks() {
+  const res = await fetch('/api/tasks');
+  if (!res.ok) return;
+  allTasks = await res.json();
+  renderTasks();
+}
+
+function renderTasks() {
+  let tasks = [...allTasks];
+  if (currentFilter === 'high') tasks = tasks.filter(t => t.priority === 'high');
+  else if (currentFilter !== 'all') tasks = tasks.filter(t => t.status === currentFilter);
+
+  const container = document.getElementById('task-list');
+  if (tasks.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">✅</div><p>No tasks here!</p></div>`;
+    return;
+  }
+  container.innerHTML = tasks.map(t => `
+    <div class="task-card ${t.status === 'completed' ? 'completed' : ''}">
+      <div class="task-info">
+        <div class="task-title">${escHtml(t.title)}</div>
+        ${t.description ? `<div class="task-desc">${escHtml(t.description)}</div>` : ''}
+        <div class="task-meta">
+          <span class="badge ${t.priority}">${t.priority.toUpperCase()}</span>
+          <span class="badge ${t.status}">${t.status.replace('_',' ').toUpperCase()}</span>
+          <span class="task-date">📅 ${t.created_at}</span>
+        </div>
+      </div>
+      <div class="task-actions">
+        <button class="btn-icon" onclick="openEdit(${t.id})" title="Edit">✏️</button>
+        <button class="btn-icon delete" onclick="deleteTask(${t.id})" title="Delete">🗑️</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterTasks(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTasks();
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── MODAL ──────────────────────────────────────
+function openModal() {
+  editingId = null;
+  document.getElementById('modal-title').textContent = 'Add New Task';
+  document.getElementById('modal-submit').textContent = 'Add Task';
+  document.getElementById('task-title').value = '';
+  document.getElementById('task-desc').value = '';
+  document.getElementById('task-priority').value = 'medium';
+  document.getElementById('task-status').value = 'pending';
+  document.getElementById('modal').classList.add('open');
+}
+
+function openEdit(id) {
+  const task = allTasks.find(t => t.id === id);
+  if (!task) return;
+  editingId = id;
+  document.getElementById('modal-title').textContent = 'Edit Task';
+  document.getElementById('modal-submit').textContent = 'Update Task';
+  document.getElementById('task-title').value = task.title;
+  document.getElementById('task-desc').value = task.description || '';
+  document.getElementById('task-priority').value = task.priority;
+  document.getElementById('task-status').value = task.status;
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+}
+
+async function submitTask() {
+  const title = document.getElementById('task-title').value.trim();
+  const description = document.getElementById('task-desc').value.trim();
+  const priority = document.getElementById('task-priority').value;
+  const status = document.getElementById('task-status').value;
+  if (!title) { alert('Title is required!'); return; }
+
+  const payload = { title, description, priority, status };
+
+  if (editingId) {
+    await fetch(`/api/tasks/${editingId}`, {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+  } else {
+    await fetch('/api/tasks', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+  }
+  closeModal();
+  // WebSocket will auto-refresh, but also do it manually as fallback
+  loadTasks(); loadAnalytics();
+}
+
+async function deleteTask(id) {
+  if (!confirm('Delete this task?')) return;
+  await fetch(`/api/tasks/${id}`, { method:'DELETE' });
+  loadTasks(); loadAnalytics();
+}
+
+async function logout() {
+  await fetch('/api/logout', { method:'POST' });
+  window.location.href = '/login';
+}
+
+// ── INIT ───────────────────────────────────────
+loadTasks();
+loadAnalytics();
+
+// Close modal on overlay click
+document.getElementById('modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+</body>
+</html>
